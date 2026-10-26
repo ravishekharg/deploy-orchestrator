@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka
+  namespace: shop
+  labels:
+    app: kafka
+    tier: data
+  annotations:
+    orch/deploy-seconds: '191'
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+    spec:
+      initContainers: []
+      containers:
+      - name: app
+        image: hashicorp/http-echo:1.0
+        args:
+        - -text
+        - kafka ok
+        - -listen
+        - :5678
+        env: []
+        ports:
+        - containerPort: 5678
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 5678
+          periodSeconds: 2
+        resources:
+          requests:
+            cpu: 10m
+            memory: 16Mi
+          limits:
+            memory: 32Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  namespace: shop
+spec:
+  selector:
+    app: kafka
+  ports:
+  - port: 5678
+    targetPort: 5678

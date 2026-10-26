@@ -1,0 +1,28 @@
+[project]
+name = "deploy-orchestrator"
+version = "0.1.0"
+description = "Release planning for microservices: cycle detection, topological waves, critical path, scheduling, blast radius, Argo CD sync waves"
+requires-python = ">=3.11"
+dependencies = ["pyyaml==6.0.3"]
+
+[project.optional-dependencies]
+dev = ["pytest==9.1.1", "hypothesis==6.168.5", "ruff==0.17.0"]
+
+[project.scripts]
+orch = "orch.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["orch"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

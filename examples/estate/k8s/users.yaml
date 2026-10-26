@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: users
+  namespace: shop
+  labels:
+    app: users
+    tier: core
+  annotations:
+    orch/deploy-seconds: '78'
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: users
+  template:
+    metadata:
+      labels:
+        app: users
+    spec:
+      initContainers:
+      - name: wait-config
+        image: busybox:1.37
+        command:
+        - sh
+        - -c
+        - until wget -q -T 2 -O /dev/null http://config:5678; do sleep 1; done
+        resources:
+          requests:
+            cpu: 5m
+            memory: 8Mi
+      - name: wait-elasticsearch
+        image: busybox:1.37
+        command:
+        - sh
+        - -c
+        - until wget -q -T 2 -O /dev/null http://elasticsearch:5678; do sleep 1; done
+        resources:
+          requests:
+            cpu: 5m
+            memory: 8Mi
+      - name: wait-postgres
+        image: busybox:1.37
+        command:
+        - sh
+        - -c
+        - until wget -q -T 2 -O /dev/null http://postgres:5678; do sleep 1; done
+        resources:
+          requests:
+            cpu: 5m
+            memory: 8Mi
+      containers:
+      - name: app
+        image: hashicorp/http-echo:1.0
+        args:
+        - -text
+        - users ok
+        - -listen
+        - :5678
+        env:
+        - name: CONFIG_URL
+          value: http://config.shop.svc.cluster.local:5678
+        - name: ELASTICSEARCH_URL
+          value: http://elasticsearch.shop.svc.cluster.local:5678
+        - name: POSTGRES_URL
+          value: http://postgres.shop.svc.cluster.local:5678
+        ports:
+        - containerPort: 5678
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 5678
+          periodSeconds: 2
+        resources:
+          requests:
+            cpu: 10m
+            memory: 16Mi
+          limits:
+            memory: 32Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: users
+  namespace: shop
+spec:
+  selector:
+    app: users
+  ports:
+  - port: 5678
+    targetPort: 5678

@@ -1,0 +1,109 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: lint + unit/property tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: pytest -q
+      - name: release plan for the sample estate
+        run: |
+          orch generate --out estate
+          orch plan estate/services.yaml --workers 6 --out plan.md > /dev/null
+          orch argocd estate/k8s --out annotated
+          cat plan.md >> "$GITHUB_STEP_SUMMARY"
+      - name: validate generated and annotated manifests
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
+          ./kubeconform -strict -summary estate/k8s annotated
+
+  plan-matrix:
+    name: CI fan-out from the graph (wave matrix)
+    needs: test
+    runs-on: ubuntu-24.04
+    outputs:
+      waves: ${{ steps.m.outputs.waves }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -e .
+      - id: m
+        run: |
+          orch generate --out estate > /dev/null
+          echo "waves=$(orch matrix estate/services.yaml | python -c 'import json,sys; print(json.dumps([w["wave"] for w in json.load(sys.stdin)]))')" >> "$GITHUB_OUTPUT"
+
+  build-wave:
+    name: wave ${{ matrix.wave }}
+    needs: plan-matrix
+    runs-on: ubuntu-24.04
+    strategy:
+      max-parallel: 1                      # waves run in order; services inside a wave would fan out further
+      matrix:
+        wave: ${{ fromJSON(needs.plan-matrix.outputs.waves) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -e .
+      - run: |
+          orch generate --out estate > /dev/null
+          orch matrix estate/services.yaml | python -c "
+          import json, sys
+          w = json.load(sys.stdin)[${{ matrix.wave }}]
+          print('wave', w['wave'], ':', ', '.join(i['service'] for i in w['include']))"
+
+  e2e:
+    name: deploy 30 services to kind (ordered vs big bang)
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -e .
+      - name: kind cluster
+        run: |
+          curl -fsSLo kind https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64 && chmod +x kind
+          printf 'kind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\nnodes: [{role: control-plane}, {role: worker}, {role: worker}]\n' > kind.yaml
+          ./kind create cluster --config kind.yaml --wait 120s
+      - run: bash e2e/run.sh
+      - name: summary
+        if: always()
+        run: |
+          python - >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          import json, os
+          if not os.path.exists("e2e-summary.json"):
+              print("## e2e: no summary"); raise SystemExit
+          s = json.load(open("e2e-summary.json"))
+          print(f"## kind: {s['services']} services in {s['waves']} waves: {'PASSED' if s['passed'] else 'FAILED'}\n")
+          print("| | total seconds | pods that waited > 2 s for a dependency | max wait (s) |\n|---|---|---|---|")
+          o, b = s["ordered"], s["big_bang"]
+          print(f"| ordered (orch deploy) | {o['total_seconds']} | {o['pods_waiting_over_2s']} | {o['max_init_wait_s']} |")
+          print(f"| everything at once | {b['total_seconds']} | {b['pods_waiting_over_2s']} | {b['max_init_wait_s']} |")
+          print("\n| check | result |\n|---|---|")
+          for k, v in s["checks"].items():
+              print(f"| {k} | {'pass' if v else 'FAIL'} |")
+          EOF
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: e2e, path: "e2e-summary.json\ndeploy-result.json\nplan.md" }
+      - if: failure()
+        run: kubectl get pods -A | grep -v Running || true

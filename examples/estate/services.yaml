@@ -1,0 +1,171 @@
+services:
+  postgres:
+    depends_on: []
+    deploy_seconds: 177
+    tier: data
+  redis:
+    depends_on: []
+    deploy_seconds: 230
+    tier: data
+  kafka:
+    depends_on: []
+    deploy_seconds: 191
+    tier: data
+  elasticsearch:
+    depends_on: []
+    deploy_seconds: 229
+    tier: data
+  config:
+    depends_on:
+    - elasticsearch
+    - kafka
+    deploy_seconds: 77
+    tier: platform
+  auth:
+    depends_on:
+    - redis
+    deploy_seconds: 72
+    tier: platform
+  feature-flags:
+    depends_on:
+    - postgres
+    - redis
+    deploy_seconds: 68
+    tier: platform
+  audit:
+    depends_on:
+    - postgres
+    - redis
+    deploy_seconds: 74
+    tier: platform
+  users:
+    depends_on:
+    - config
+    - elasticsearch
+    - postgres
+    deploy_seconds: 78
+    tier: core
+  catalog:
+    depends_on:
+    - config
+    - kafka
+    - postgres
+    deploy_seconds: 103
+    tier: core
+  inventory:
+    depends_on:
+    - feature-flags
+    - postgres
+    - redis
+    deploy_seconds: 62
+    tier: core
+  pricing:
+    depends_on:
+    - postgres
+    deploy_seconds: 99
+    tier: core
+  payments:
+    depends_on:
+    - auth
+    - elasticsearch
+    deploy_seconds: 87
+    tier: core
+  shipping:
+    depends_on:
+    - elasticsearch
+    deploy_seconds: 90
+    tier: core
+  notifications:
+    depends_on:
+    - audit
+    - postgres
+    deploy_seconds: 92
+    tier: core
+  search:
+    depends_on:
+    - audit
+    deploy_seconds: 91
+    tier: core
+  cart:
+    depends_on:
+    - shipping
+    - users
+    deploy_seconds: 45
+    tier: domain
+  orders:
+    depends_on:
+    - auth
+    - payments
+    - users
+    deploy_seconds: 54
+    tier: domain
+  checkout:
+    depends_on:
+    - catalog
+    - postgres
+    - redis
+    deploy_seconds: 76
+    tier: domain
+  recommendations:
+    depends_on:
+    - payments
+    deploy_seconds: 46
+    tier: domain
+  reviews:
+    depends_on:
+    - payments
+    - redis
+    deploy_seconds: 41
+    tier: domain
+  loyalty:
+    depends_on:
+    - elasticsearch
+    - notifications
+    - postgres
+    deploy_seconds: 43
+    tier: domain
+  returns:
+    depends_on:
+    - payments
+    - pricing
+    deploy_seconds: 65
+    tier: domain
+  invoicing:
+    depends_on:
+    - catalog
+    - kafka
+    deploy_seconds: 80
+    tier: domain
+  fraud:
+    depends_on:
+    - users
+    deploy_seconds: 61
+    tier: domain
+  reporting:
+    depends_on:
+    - catalog
+    deploy_seconds: 61
+    tier: domain
+  web-bff:
+    depends_on:
+    - shipping
+    deploy_seconds: 54
+    tier: edge
+  mobile-bff:
+    depends_on:
+    - config
+    deploy_seconds: 37
+    tier: edge
+  partner-api:
+    depends_on:
+    - elasticsearch
+    - postgres
+    - redis
+    deploy_seconds: 44
+    tier: edge
+  admin-api:
+    depends_on:
+    - auth
+    - loyalty
+    deploy_seconds: 47
+    tier: edge

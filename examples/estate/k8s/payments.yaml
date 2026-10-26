@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payments
+  namespace: shop
+  labels:
+    app: payments
+    tier: core
+  annotations:
+    orch/deploy-seconds: '87'
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payments
+  template:
+    metadata:
+      labels:
+        app: payments
+    spec:
+      initContainers:
+      - name: wait-auth
+        image: busybox:1.37
+        command:
+        - sh
+        - -c
+        - until wget -q -T 2 -O /dev/null http://auth:5678; do sleep 1; done
+        resources:
+          requests:
+            cpu: 5m
+            memory: 8Mi
+      - name: wait-elasticsearch
+        image: busybox:1.37
+        command:
+        - sh
+        - -c
+        - until wget -q -T 2 -O /dev/null http://elasticsearch:5678; do sleep 1; done
+        resources:
+          requests:
+            cpu: 5m
+            memory: 8Mi
+      containers:
+      - name: app
+        image: hashicorp/http-echo:1.0
+        args:
+        - -text
+        - payments ok
+        - -listen
+        - :5678
+        env:
+        - name: AUTH_URL
+          value: http://auth.shop.svc.cluster.local:5678
+        - name: ELASTICSEARCH_URL
+          value: http://elasticsearch.shop.svc.cluster.local:5678
+        ports:
+        - containerPort: 5678
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 5678
+          periodSeconds: 2
+        resources:
+          requests:
+            cpu: 10m
+            memory: 16Mi
+          limits:
+            memory: 32Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payments
+  namespace: shop
+spec:
+  selector:
+    app: payments
+  ports:
+  - port: 5678
+    targetPort: 5678
