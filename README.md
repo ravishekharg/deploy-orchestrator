@@ -19,7 +19,33 @@ that reference another Service's DNS name, plus `orch/depends-on` annotations).
 
 ## Results
 
-_Filled from the CI run._
+Measured in CI (GitHub-hosted `ubuntu-24.04`, kind with 1 control plane + 2 workers; every run repeats it).
+
+**Release plan for the sample estate** (30 services, 50 dependencies, deploy times 30–240 s):
+
+| Strategy | Release time |
+|---|---|
+| One service at a time | 42m54s |
+| Plain sync waves (each wave waits for its slowest service) | 9m19s |
+| **Critical-path list scheduling, 6 parallel slots** | **8m48s** |
+| Lower bound for 6 slots | 8m09s |
+
+The plan also flagged 10 declared dependencies that are already implied by others (e.g. `orders -> auth` when
+`orders` already reaches `auth` through another service). Full report with Gantt chart:
+[`examples/release-plan.md`](examples/release-plan.md).
+
+**Real deployment on Kubernetes:** 30 services whose init containers block until every dependency answers over
+HTTP.
+
+| | Total time | Pods that had to wait for a dependency | Longest wait | Pod time spent blocked |
+|---|---|---|---|---|
+| **`orch deploy`** (5 waves, rollouts in parallel within a wave) | 41 s | **0 of 30** | 1 s | — |
+| Everything applied at once | 48 s | 24 of 30 | 38 s | 572 s |
+
+All checks passed: every service started only after all its dependencies were Ready, no pod waited in the ordered
+run, and a cyclic `services.yaml` was rejected by `orch check`. With real services the difference is larger than
+here: a pod that starts before its database usually crash-loops and backs off instead of waiting politely, and
+the big-bang release takes as long as the slowest chain of back-offs.
 
 ## Outputs
 
